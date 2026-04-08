@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OPENCLAW // MISSION CONTROL</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --green: #00ff41;
+    --green-dim: #00aa2a;
+    --green-glow: rgba(0,255,65,0.15);
+    --amber: #ffb300;
+    --red: #ff3c3c;
+    --blue: #00d4ff;
+    --bg: #000a00;
+    --panel: rgba(0,20,4,0.92);
+    --border: #005510;
+    --font-mono: 'Share Tech Mono', monospace;
+    --font-display: 'Orbitron', sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--green);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    min-height: 100vh;
+    overflow-x: hidden;
+    position: relative;
+  }
+
+  /* CRT scanlines */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.08) 2px,
+      rgba(0,0,0,0.08) 4px
+    );
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  /* Vignette */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.7) 100%);
+    pointer-events: none;
+    z-index: 9998;
+  }
+
+  /* Flicker */
+  @keyframes flicker {
+    0%,100%{opacity:1} 92%{opacity:1} 93%{opacity:0.97} 94%{opacity:1} 95%{opacity:0.98}
+  }
+  body { animation: flicker 8s infinite; }
+
+  /* ── TOP HEADER ── */
+  #header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(0,10,0,0.95);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  #logo {
+    font-family: var(--font-display);
+    font-size: 20px;
+    font-weight: 900;
+    letter-spacing: 4px;
+    color: var(--green);
+    text-shadow: 0 0 20px var(--green), 0 0 40px rgba(0,255,65,0.3);
+  }
+
+  #logo span { color: var(--amber); }
+
+  #mission-id {
+    font-family: var(--font-display);
+    font-size: 11px;
+    letter-spacing: 3px;
+    color: var(--green-dim);
+  }
+
+  #clock-area {
+    text-align: right;
+    line-height: 1.6;
+  }
+
+  #mission-clock {
+    font-family: var(--font-display);
+    font-size: 18px;
+    color: var(--amber);
+    text-shadow: 0 0 10px var(--amber);
+    letter-spacing: 3px;
+  }
+
+  #utc-clock { font-size: 11px; color: var(--green-dim); letter-spacing: 2px; }
+
+  /* ── STATUS BAR ── */
+  #status-bar {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--border);
+    background: rgba(0,8,0,0.8);
+  }
+
+  .status-item {
+    flex: 1;
+    padding: 6px 14px;
+    border-right: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    letter-spacing: 1px;
+  }
+
+  .status-item:last-child { border-right: none; }
+
+  .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--green-dim);
+    box-shadow: 0 0 6px currentColor;
+    flex-shrink: 0;
+  }
+  .dot.green { background: var(--green); color: var(--green); }
+  .dot.amber { background: var(--amber); color: var(--amber); }
+  .dot.red   { background: var(--red);   color: var(--red);   }
+
+  .status-label { color: var(--green-dim); text-transform: uppercase; }
+  .status-val   { color: var(--green); margin-left: auto; }
+
+  /* ── MAIN GRID ── */
+  #grid {
+    display: grid;
+    grid-template-columns: 280px 1fr 260px;
+    grid-template-rows: auto auto;
+    gap: 10px;
+    padding: 10px;
+    min-height: calc(100vh - 90px);
+  }
+
+  /* ── PANEL BASE ── */
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: inset 0 0 30px rgba(0,30,5,0.5), 0 0 15px rgba(0,255,65,0.03);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .panel::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--green-dim), transparent);
+  }
+
+  .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 12px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(0,30,5,0.6);
+    flex-shrink: 0;
+  }
+
+  .panel-title {
+    font-family: var(--font-display);
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: var(--green-dim);
+    text-transform: uppercase;
+  }
+
+  .panel-badge {
+    font-size: 10px;
+    padding: 2px 6px;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    color: var(--green-dim);
+    letter-spacing: 1px;
+  }
+
+  .panel-body {
+    padding: 10px;
+    flex: 1;
+    overflow-y: auto;
+  }
+
+  .panel-body::-webkit-scrollbar { width: 4px; }
+  .panel-body::-webkit-scrollbar-track { background: transparent; }
+  .panel-body::-webkit-scrollbar-thumb { background: var(--border); }
+
+  /* ── LEFT COLUMN ── */
+  #left { grid-column: 1; grid-row: 1 / 3; display: flex; flex-direction: column; gap: 10px; }
+
+  /* Config panel */
+  .field-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 10px;
+  }
+
+  .field-label {
+    font-size: 10px;
+    color: var(--green-dim);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  .field-input {
+    background: rgba(0,20,5,0.8);
+    border: 1px solid var(--border);
+    color: var(--green);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    padding: 6px 8px;
+    outline: none;
+    width: 100%;
+    transition: border-color 0.2s;
+  }
+
+  .field-input:focus { border-color: var(--green); box-shadow: 0 0 8px var(--green-glow); }
+
+  .btn {
+    background: transparent;
+    border: 1px solid var(--green-dim);
+    color: var(--green);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 7px 14px;
+    cursor: pointer;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    transition: all 0.15s;
+    width: 100%;
+    margin-top: 4px;
+  }
+
+  .btn:hover {
+    background: rgba(0,255,65,0.08);
+    border-color: var(--green);
+    box-shadow: 0 0 12px var(--green-glow);
+  }
+
+  .btn:active { background: rgba(0,255,65,0.15); }
+
+  .btn.amber {
+    border-color: var(--amber);
+    color: var(--amber);
+  }
+
+  .btn.amber:hover { background: rgba(255,179,0,0.08); box-shadow: 0 0 12px rgba(255,179,0,0.2); }
+
+  /* Models list */
+  .model-item {
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(0,85,16,0.3);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .model-item:last-child { border-bottom: none; }
+  .model-item:hover { background: rgba(0,255,65,0.05); padding-left: 6px; }
+  .model-item.active { color: var(--amber); }
+
+  .model-name { font-size: 12px; word-break: break-all; }
+  .model-meta { font-size: 10px; color: var(--green-dim); margin-top: 2px; }
+
+  /* Metrics */
+  .metric-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(0,85,16,0.2);
+  }
+
+  .metric-row:last-child { border-bottom: none; }
+  .metric-key { color: var(--green-dim); font-size: 11px; letter-spacing: 1px; }
+  .metric-val { color: var(--green); font-size: 14px; }
+  .metric-val.amber { color: var(--amber); }
+
+  /* ── CENTER COLUMN ── */
+  #center { grid-column: 2; grid-row: 1 / 3; display: flex; flex-direction: column; gap: 10px; }
+
+  /* Terminal chat */
+  #chat-panel { flex: 1; min-height: 0; }
+
+  #chat-output {
+    flex: 1;
+    height: 420px;
+    overflow-y: auto;
+    padding: 10px;
+    font-size: 13px;
+    line-height: 1.7;
+    background: rgba(0,8,0,0.6);
+    border-bottom: 1px solid var(--border);
+  }
+
+  #chat-output::-webkit-scrollbar { width: 4px; }
+  #chat-output::-webkit-scrollbar-thumb { background: var(--border); }
+
+  .msg { margin-bottom: 10px; }
+  .msg-header { color: var(--green-dim); font-size: 10px; letter-spacing: 2px; margin-bottom: 3px; }
+  .msg-user .msg-header { color: var(--amber); }
+  .msg-user .msg-text { color: var(--amber); }
+  .msg-assistant .msg-text { color: var(--green); }
+  .msg-system .msg-text { color: var(--green-dim); font-style: italic; }
+  .msg-error .msg-text { color: var(--red); }
+
+  /* Typing cursor blink */
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+  .cursor { display: inline-block; width: 8px; height: 14px; background: var(--green); animation: blink 1s infinite; vertical-align: bottom; margin-left: 2px; }
+
+  #chat-input-area {
+    display: flex;
+    gap: 0;
+    padding: 10px;
+    background: rgba(0,10,2,0.8);
+  }
+
+  #prompt-prefix { color: var(--green-dim); padding: 8px 6px 8px 0; align-self: center; }
+
+  #chat-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--green-dim);
+    color: var(--green);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    padding: 6px 4px;
+    outline: none;
+    caret-color: var(--green);
+  }
+
+  #chat-input:focus { border-color: var(--green); }
+
+  #send-btn {
+    background: transparent;
+    border: 1px solid var(--green-dim);
+    color: var(--green);
+    font-family: var(--font-display);
+    font-size: 10px;
+    padding: 6px 14px;
+    cursor: pointer;
+    letter-spacing: 2px;
+    margin-left: 10px;
+    transition: all 0.15s;
+  }
+
+  #send-btn:hover { background: rgba(0,255,65,0.1); border-color: var(--green); }
+
+  /* Params panel */
+  #params-panel .panel-body { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
+
+  .param-group { flex: 1; min-width: 120px; }
+  .param-label { font-size: 10px; color: var(--green-dim); letter-spacing: 1px; margin-bottom: 4px; display: block; }
+
+  .param-input {
+    background: rgba(0,20,5,0.8);
+    border: 1px solid var(--border);
+    color: var(--green);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 5px 8px;
+    outline: none;
+    width: 100%;
+  }
+
+  .param-input:focus { border-color: var(--green-dim); }
+
+  /* ── RIGHT COLUMN ── */
+  #right { grid-column: 3; grid-row: 1 / 3; display: flex; flex-direction: column; gap: 10px; }
+
+  /* Log */
+  #log-body {
+    height: 260px;
+    overflow-y: auto;
+    padding: 8px;
+    font-size: 11px;
+    line-height: 1.6;
+  }
+
+  #log-body::-webkit-scrollbar { width: 3px; }
+  #log-body::-webkit-scrollbar-thumb { background: var(--border); }
+
+  .log-entry { margin-bottom: 3px; }
+  .log-time { color: var(--green-dim); }
+  .log-msg { color: var(--green); }
+  .log-warn { color: var(--amber); }
+  .log-error { color: var(--red); }
+
+  /* Telemetry bars */
+  .telem-row { margin-bottom: 12px; }
+  .telem-label { font-size: 10px; color: var(--green-dim); letter-spacing: 1px; margin-bottom: 4px; display: flex; justify-content: space-between; }
+  .telem-bar { height: 6px; background: rgba(0,85,16,0.3); border-radius: 0; position: relative; overflow: hidden; }
+  .telem-fill { height: 100%; background: var(--green); transition: width 0.8s ease; box-shadow: 0 0 8px var(--green); }
+  .telem-fill.amber { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+  .telem-fill.red   { background: var(--red);   box-shadow: 0 0 8px var(--red); }
+
+  /* ── Response stream ── */
+  @keyframes scanline-move {
+    0% { transform: translateY(-100%); }
+    100% { transform: translateY(100vh); }
+  }
+
+  /* Pulse indicator */
+  @keyframes pulse {
+    0%,100%{opacity:0.3; transform:scale(1)} 50%{opacity:1; transform:scale(1.4)}
+  }
+  .pulse { animation: pulse 2s infinite; }
+
+  /* ASCII art header */
+  #ascii { font-size: 10px; line-height: 1.3; color: rgba(0,255,65,0.25); text-align: center; padding: 8px; letter-spacing: 2px; border-bottom: 1px solid var(--border); }
+
+  /* Connection state */
+  #conn-state { font-size: 11px; letter-spacing: 1px; }
+
+  /* Responsive tag for token count */
+  #token-bar { display: flex; gap: 20px; padding: 6px 12px; border-top: 1px solid var(--border); background: rgba(0,8,0,0.8); font-size: 11px; color: var(--green-dim); }
+  #token-bar span { color: var(--green); }
+
+  .sep { border: none; border-top: 1px solid var(--border); margin: 8px 0; }
+
+  /* ── BOTTOM TICKER ── */
+  #ticker {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 5px 20px;
+    background: rgba(0,8,0,0.95);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    font-size: 11px;
+    color: var(--green-dim);
+    z-index: 200;
+    overflow: hidden;
+  }
+
+  #ticker-label { font-family: var(--font-display); font-size: 9px; letter-spacing: 2px; color: var(--amber); flex-shrink: 0; }
+  #ticker-content { flex: 1; white-space: nowrap; overflow: hidden; }
+
+  @keyframes ticker-scroll {
+    0%   { transform: translateX(100%); }
+    100% { transform: translateX(-100%); }
+  }
+
+  #ticker-inner { display: inline-block; animation: ticker-scroll 25s linear infinite; }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div id="header">
+  <div>
+    <div id="logo">OPEN<span>CLAW</span> // MCTL</div>
+    <div id="mission-id">STATION: LOCAL &nbsp;|&nbsp; NET: OFFLINE-CAPABLE</div>
+  </div>
+  <div style="text-align:center;">
+    <div id="ascii">▓▓ FLIGHT OPERATIONS ▓▓</div>
+  </div>
+  <div id="clock-area">
+    <div id="mission-clock">T+00:00:00</div>
+    <div id="utc-clock">UTC 00:00:00</div>
+  </div>
+</div>
+
+<!-- STATUS BAR -->
+<div id="status-bar">
+  <div class="status-item"><div class="dot" id="conn-dot"></div><span class="status-label">CONN</span><span class="status-val" id="conn-state">STANDBY</span></div>
+  <div class="status-item"><div class="dot amber pulse"></div><span class="status-label">ENDPOINT</span><span class="status-val" id="endpoint-display">—</span></div>
+  <div class="status-item"><div class="dot" id="model-dot"></div><span class="status-label">MODEL</span><span class="status-val" id="active-model-display">NONE</span></div>
+  <div class="status-item"><div class="dot green"></div><span class="status-label">TOTAL REQ</span><span class="status-val" id="req-count">0</span></div>
+  <div class="status-item"><div class="dot green"></div><span class="status-label">TOKENS OUT</span><span class="status-val" id="token-count">0</span></div>
+  <div class="status-item"><div class="dot" id="mode-dot"></div><span class="status-label">STREAM</span><span class="status-val" id="stream-state">OFF</span></div>
+</div>
+
+<!-- MAIN GRID -->
+<div id="grid">
+
+  <!-- ═══ LEFT ═══ -->
+  <div id="left">
+
+    <!-- Config -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">▸ ENDPOINT CONFIG</span>
+        <span class="panel-badge">SYS-01</span>
+      </div>
+      <div class="panel-body">
+        <div class="field-row">
+          <span class="field-label">HOST</span>
+          <input class="field-input" id="host-input" value="127.0.0.1" />
+        </div>
+        <div class="field-row">
+          <span class="field-label">PORT</span>
+          <input class="field-input" id="port-input" value="11434" type="number" />
+        </div>
+        <div class="field-row">
+          <span class="field-label">API PATH</span>
+          <input class="field-input" id="path-input" value="/v1" />
+        </div>
+        <button class="btn" onclick="connect()">[ CONNECT ]</button>
+        <button class="btn amber" onclick="loadModels()" style="margin-top:6px;">[ FETCH MODELS ]</button>
+      </div>
+    </div>
+
+    <!-- Models -->
+    <div class="panel" style="flex:1;">
+      <div class="panel-header">
+        <span class="panel-title">▸ MODEL MANIFEST</span>
+        <span class="panel-badge" id="model-count-badge">0 LOADED</span>
+      </div>
+      <div class="panel-body" id="model-list">
+        <div style="color:var(--green-dim); font-size:11px; text-align:center; padding:20px 0;">
+          AWAITING MANIFEST<br><br>[ CONNECT TO FETCH ]
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">▸ SESSION STATS</span>
+        <span class="panel-badge">TELM</span>
+      </div>
+      <div class="panel-body">
+        <div class="metric-row"><span class="metric-key">REQUESTS</span><span class="metric-val" id="stat-req">0</span></div>
+        <div class="metric-row"><span class="metric-key">TOK SENT</span><span class="metric-val" id="stat-tok-in">0</span></div>
+        <div class="metric-row"><span class="metric-key">TOK RCVD</span><span class="metric-val" id="stat-tok-out">0</span></div>
+        <div class="metric-row"><span class="metric-key">AVG LATENCY</span><span class="metric-val amber" id="stat-latency">—</span></div>
+        <div class="metric-row"><span class="metric-key">ERRORS</span><span class="metric-val" id="stat-errors" style="color:var(--red)">0</span></div>
+        <div class="metric-row"><span class="metric-key">UPTIME</span><span class="metric-val" id="stat-uptime">00:00:00</span></div>
+      </div>
+    </div>
+
+  </div><!-- /left -->
+
+  <!-- ═══ CENTER ═══ -->
+  <div id="center">
+
+    <!-- Params -->
+    <div class="panel" id="params-panel">
+      <div class="panel-header">
+        <span class="panel-title">▸ GENERATION PARAMETERS</span>
+        <span class="panel-badge">GEN-CFG</span>
+      </div>
+      <div class="panel-body" style="display:flex; flex-wrap:wrap; gap:10px; align-items:flex-start; padding:10px;">
+        <div class="param-group">
+          <span class="param-label">TEMPERATURE</span>
+          <input class="param-input" id="p-temp" value="0.7" type="number" step="0.1" min="0" max="2">
+        </div>
+        <div class="param-group">
+          <span class="param-label">MAX TOKENS</span>
+          <input class="param-input" id="p-maxtok" value="512" type="number" min="1">
+        </div>
+        <div class="param-group">
+          <span class="param-label">TOP P</span>
+          <input class="param-input" id="p-topp" value="0.9" type="number" step="0.05" min="0" max="1">
+        </div>
+        <div class="param-group">
+          <span class="param-label">STREAM</span>
+          <select class="param-input" id="p-stream">
+            <option value="false">DISABLED</option>
+            <option value="true" selected>ENABLED</option>
+          </select>
+        </div>
+        <div class="param-group" style="flex:2; min-width:200px;">
+          <span class="param-label">SYSTEM PROMPT</span>
+          <input class="param-input" id="p-system" value="You are a helpful AI assistant." style="width:100%;">
+        </div>
+        <button class="btn" style="width:auto; margin-top:14px;" onclick="clearChat()">[ CLR ]</button>
+      </div>
+    </div>
+
+    <!-- Chat Terminal -->
+    <div class="panel" id="chat-panel" style="flex:1;">
+      <div class="panel-header">
+        <span class="panel-title">▸ COMMUNICATIONS TERMINAL</span>
+        <span class="panel-badge" id="chat-status-badge">IDLE</span>
+      </div>
+      <div id="chat-output"></div>
+      <div id="token-bar">
+        <div>MSG: <span id="tb-msgs">0</span></div>
+        <div>TOK EST: <span id="tb-toks">0</span></div>
+        <div>LAST: <span id="tb-last">—</span></div>
+        <div style="margin-left:auto;" id="tb-thinking"></div>
+      </div>
+      <div id="chat-input-area">
+        <span id="prompt-prefix">CTRL&gt;</span>
+        <input id="chat-input" type="text" placeholder="enter transmission..." onkeydown="handleKey(event)" autocomplete="off" />
+        <button id="send-btn" onclick="sendMessage()">TX ▶</button>
+      </div>
+    </div>
+
+  </div><!-- /center -->
+
+  <!-- ═══ RIGHT ═══ -->
+  <div id="right">
+
+    <!-- Telemetry -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">▸ TELEMETRY</span>
+        <span class="panel-badge">LIVE</span>
+      </div>
+      <div class="panel-body">
+        <div class="telem-row">
+          <div class="telem-label"><span>CONN HEALTH</span><span id="t-conn-pct">0%</span></div>
+          <div class="telem-bar"><div class="telem-fill" id="t-conn-bar" style="width:0%"></div></div>
+        </div>
+        <div class="telem-row">
+          <div class="telem-label"><span>TOKEN RATE</span><span id="t-tokrate">0 t/s</span></div>
+          <div class="telem-bar"><div class="telem-fill amber" id="t-tokrate-bar" style="width:0%"></div></div>
+        </div>
+        <div class="telem-row">
+          <div class="telem-label"><span>LATENCY</span><span id="t-lat">0ms</span></div>
+          <div class="telem-bar"><div class="telem-fill" id="t-lat-bar" style="width:0%"></div></div>
+        </div>
+        <div class="telem-row">
+          <div class="telem-label"><span>ERROR RATE</span><span id="t-errrate">0%</span></div>
+          <div class="telem-bar"><div class="telem-fill red" id="t-errrate-bar" style="width:0%"></div></div>
+        </div>
+        <hr class="sep">
+        <div id="raw-telemetry" style="font-size:10px; color:var(--green-dim); line-height:1.8;">
+          AWAITING SIGNAL...
+        </div>
+      </div>
+    </div>
+
+    <!-- Event Log -->
+    <div class="panel" style="flex:1;">
+      <div class="panel-header">
+        <span class="panel-title">▸ EVENT LOG</span>
+        <span class="panel-badge" id="log-count-badge">0 EVT</span>
+      </div>
+      <div id="log-body"></div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">▸ QUICK FIRE</span>
+        <span class="panel-badge">CMD</span>
+      </div>
+      <div class="panel-body" style="display:flex; flex-direction:column; gap:6px;">
+        <button class="btn" onclick="quickPrompt('Summarize yourself in 2 sentences.')">SELF REPORT</button>
+        <button class="btn" onclick="quickPrompt('List your capabilities.')">CAPABILITY SCAN</button>
+        <button class="btn amber" onclick="quickPrompt('What is 2+2? Answer only with the number.')">PING TEST</button>
+        <button class="btn" onclick="exportLog()">EXPORT LOG</button>
+      </div>
+    </div>
+
+  </div><!-- /right -->
+
+</div><!-- /grid -->
+
+<!-- TICKER -->
+<div id="ticker">
+  <span id="ticker-label">DATALINK</span>
+  <div id="ticker-content"><span id="ticker-inner">OPENCLAW MISSION CONTROL // ALL SYSTEMS NOMINAL // AWAITING UPLINK // CHECK ENDPOINT CONFIG AND PRESS CONNECT //</span></div>
+</div>
+
+<script>
+// ── STATE ──
+const state = {
+  baseUrl: 'http://127.0.0.1:11434/v1',
+  connected: false,
+  activeModel: null,
+  models: [],
+  messages: [],
+  stats: { req: 0, tokIn: 0, tokOut: 0, latencies: [], errors: 0 },
+  startTime: Date.now(),
+  logEntries: [],
+  logCount: 0,
+};
+
+// ── CLOCK ──
+function pad(n,w=2){ return String(n).padStart(w,'0'); }
+
+function updateClocks() {
+  const now = new Date();
+  document.getElementById('utc-clock').textContent =
+    `UTC ${pad(now.getUTCHours())}:${pad(now.getUTCMinutes())}:${pad(now.getUTCSeconds())}`;
+
+  const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
+  const h = Math.floor(elapsed/3600), m = Math.floor((elapsed%3600)/60), s = elapsed%60;
+  document.getElementById('mission-clock').textContent = `T+${pad(h)}:${pad(m)}:${pad(s)}`;
+  document.getElementById('stat-uptime').textContent = `${pad(h)}:${pad(m)}:${pad(s)}`;
+}
+
+setInterval(updateClocks, 1000);
+updateClocks();
+
+// ── LOG ──
+function log(msg, level='info') {
+  const now = new Date();
+  const ts = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  state.logCount++;
+  state.logEntries.unshift({ ts, msg, level });
+  if (state.logEntries.length > 200) state.logEntries.pop();
+
+  const lb = document.getElementById('log-body');
+  const entry = document.createElement('div');
+  entry.className = 'log-entry';
+  const cls = level === 'warn' ? 'log-warn' : level === 'error' ? 'log-error' : 'log-msg';
+  entry.innerHTML = `<span class="log-time">[${ts}]</span> <span class="${cls}">${msg}</span>`;
+  lb.insertBefore(entry, lb.firstChild);
+  document.getElementById('log-count-badge').textContent = `${state.logCount} EVT`;
+
+  // Update ticker
+  document.getElementById('ticker-inner').textContent =
+    `[${ts}] ${msg}  //  OPENCLAW MISSION CONTROL  //  `;
+}
+
+// ── CONNECT ──
+async function connect() {
+  const host = document.getElementById('host-input').value.trim();
+  const port = document.getElementById('port-input').value.trim();
+  const path = document.getElementById('path-input').value.trim();
+  state.baseUrl = `http://${host}:${port}${path}`;
+  document.getElementById('endpoint-display').textContent = `${host}:${port}`;
+  log(`Connecting to ${state.baseUrl}...`);
+  updateConnState('CONNECTING', 'amber');
+  await loadModels();
+}
+
+// ── LOAD MODELS ──
+async function loadModels() {
+  try {
+    const t0 = Date.now();
+    const res = await fetch(`${state.baseUrl}/models`, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const lat = Date.now() - t0;
+
+    const models = data.data || data.models || [];
+    state.models = models;
+    state.connected = true;
+
+    updateConnState('ONLINE', 'green');
+    updateTelemetry(lat, true);
+    renderModels(models);
+    log(`Manifest received — ${models.length} model(s) | ${lat}ms`, 'info');
+    document.getElementById('model-count-badge').textContent = `${models.length} LOADED`;
+
+    if (models.length > 0 && !state.activeModel) {
+      selectModel(models[0].id || models[0].name || models[0]);
+    }
+  } catch (e) {
+    state.connected = false;
+    updateConnState('FAULT', 'red');
+    state.stats.errors++;
+    updateStats();
+    log(`Connection failed: ${e.message}`, 'error');
+    document.getElementById('model-list').innerHTML =
+      `<div style="color:var(--red);font-size:11px;text-align:center;padding:20px 0;">CONNECTION FAULT<br><br>${e.message}</div>`;
+  }
+}
+
+function renderModels(models) {
+  const container = document.getElementById('model-list');
+  if (models.length === 0) {
+    container.innerHTML = '<div style="color:var(--green-dim);text-align:center;padding:20px 0;font-size:11px;">NO MODELS FOUND</div>';
+    return;
+  }
+  container.innerHTML = '';
+  models.forEach(m => {
+    const id = m.id || m.name || m;
+    const size = m.size ? ` — ${(m.size/1e9).toFixed(1)}B` : '';
+    const el = document.createElement('div');
+    el.className = 'model-item' + (id === state.activeModel ? ' active' : '');
+    el.innerHTML = `<div class="model-name">${id}</div><div class="model-meta">▸ CLICK TO SELECT${size}</div>`;
+    el.onclick = () => selectModel(id);
+    container.appendChild(el);
+  });
+}
+
+function selectModel(id) {
+  state.activeModel = id;
+  document.getElementById('active-model-display').textContent = id.split(':')[0].toUpperCase();
+  document.getElementById('model-dot').className = 'dot green';
+  renderModels(state.models);
+  log(`Model selected: ${id}`);
+}
+
+// ── SEND MESSAGE ──
+async function sendMessage() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+  if (!state.activeModel) { log('No model selected', 'warn'); return; }
+  input.value = '';
+
+  // Add user message
+  const systemPrompt = document.getElementById('p-system').value.trim();
+  if (state.messages.length === 0 && systemPrompt) {
+    state.messages.push({ role: 'system', content: systemPrompt });
+  }
+  state.messages.push({ role: 'user', content: text });
+
+  appendMsg('user', text);
+  state.stats.req++;
+  updateStats();
+
+  const streaming = document.getElementById('p-stream').value === 'true';
+  document.getElementById('chat-status-badge').textContent = 'TRANSMITTING';
+  document.getElementById('tb-thinking').textContent = '[ PROCESSING... ]';
+  log(`TX → ${text.substring(0, 50)}${text.length > 50 ? '...' : ''}`);
+
+  const t0 = Date.now();
+  try {
+    const body = {
+      model: state.activeModel,
+      messages: state.messages,
+      temperature: parseFloat(document.getElementById('p-temp').value) || 0.7,
+      max_tokens: parseInt(document.getElementById('p-maxtok').value) || 512,
+      top_p: parseFloat(document.getElementById('p-topp').value) || 0.9,
+      stream: streaming,
+    };
+
+    const res = await fetch(`${state.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+
+    let fullText = '';
+
+    if (streaming) {
+      const msgEl = appendMsg('assistant', '');
+      const textEl = msgEl.querySelector('.msg-text');
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop();
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const payload = line.slice(6).trim();
+          if (payload === '[DONE]') continue;
+          try {
+            const chunk = JSON.parse(payload);
+            const delta = chunk.choices?.[0]?.delta?.content || '';
+            fullText += delta;
+            textEl.textContent = fullText;
+            scrollChat();
+          } catch {}
+        }
+      }
+    } else {
+      const data = await res.json();
+      fullText = data.choices?.[0]?.message?.content || data.choices?.[0]?.text || JSON.stringify(data);
+      appendMsg('assistant', fullText);
+    }
+
+    const lat = Date.now() - t0;
+    state.messages.push({ role: 'assistant', content: fullText });
+    state.stats.tokOut += Math.ceil(fullText.length / 4);
+    state.stats.tokIn  += Math.ceil(text.length / 4);
+    state.stats.latencies.push(lat);
+    updateStats();
+    updateTelemetry(lat, true);
+
+    document.getElementById('chat-status-badge').textContent = 'IDLE';
+    document.getElementById('tb-thinking').textContent = '';
+    document.getElementById('tb-last').textContent = `${lat}ms`;
+    log(`RX ← ${fullText.substring(0, 50)}${fullText.length > 50 ? '...' : ''} [${lat}ms]`);
+
+  } catch (e) {
+    state.stats.errors++;
+    updateStats();
+    appendMsg('error', `FAULT: ${e.message}`);
+    document.getElementById('chat-status-badge').textContent = 'FAULT';
+    document.getElementById('tb-thinking').textContent = '';
+    log(`TX fault: ${e.message}`, 'error');
+  }
+}
+
+function handleKey(e) { if (e.key === 'Enter') sendMessage(); }
+
+// ── CHAT RENDERING ──
+function appendMsg(role, text) {
+  const out = document.getElementById('chat-output');
+  const div = document.createElement('div');
+  div.className = `msg msg-${role === 'error' ? 'error' : role}`;
+  const labels = { user: 'CTRL ▶ UPLINK', assistant: 'CLAW ◀ DOWNLINK', error: '!! FAULT !!' };
+  const ts = new Date().toLocaleTimeString('en-GB');
+  div.innerHTML = `
+    <div class="msg-header">${labels[role] || role.toUpperCase()} // ${ts}</div>
+    <div class="msg-text">${escHtml(text)}</div>
+  `;
+  out.appendChild(div);
+  scrollChat();
+  const n = out.querySelectorAll('.msg').length;
+  document.getElementById('tb-msgs').textContent = n;
+  document.getElementById('tb-toks').textContent = state.stats.tokIn + state.stats.tokOut;
+  return div;
+}
+
+function scrollChat() {
+  const out = document.getElementById('chat-output');
+  out.scrollTop = out.scrollHeight;
+}
+
+function clearChat() {
+  state.messages = [];
+  document.getElementById('chat-output').innerHTML = '';
+  document.getElementById('tb-msgs').textContent = '0';
+  document.getElementById('tb-toks').textContent = '0';
+  document.getElementById('tb-last').textContent = '—';
+  log('Chat history cleared');
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+}
+
+// ── STATS & TELEMETRY ──
+function updateStats() {
+  document.getElementById('stat-req').textContent   = state.stats.req;
+  document.getElementById('stat-tok-in').textContent = state.stats.tokIn;
+  document.getElementById('stat-tok-out').textContent = state.stats.tokOut;
+  document.getElementById('stat-errors').textContent = state.stats.errors;
+  document.getElementById('req-count').textContent = state.stats.req;
+  document.getElementById('token-count').textContent = state.stats.tokOut;
+
+  const lats = state.stats.latencies;
+  if (lats.length > 0) {
+    const avg = Math.round(lats.reduce((a,b)=>a+b,0)/lats.length);
+    document.getElementById('stat-latency').textContent = `${avg}ms`;
+    document.getElementById('t-lat').textContent = `${avg}ms`;
+    const latPct = Math.min(100, (avg / 5000) * 100);
+    document.getElementById('t-lat-bar').style.width = latPct + '%';
+    document.getElementById('t-lat-bar').className = 'telem-fill' + (latPct > 70 ? ' red' : latPct > 40 ? ' amber' : '');
+  }
+
+  const errRate = state.stats.req > 0 ? Math.round((state.stats.errors / state.stats.req) * 100) : 0;
+  document.getElementById('t-errrate').textContent = `${errRate}%`;
+  document.getElementById('t-errrate-bar').style.width = errRate + '%';
+
+  // Raw telemetry panel
+  const last = state.stats.latencies[state.stats.latencies.length - 1];
+  document.getElementById('raw-telemetry').innerHTML = `
+    REQ/SESS &nbsp; ${state.stats.req}<br>
+    TOK/IN &nbsp;&nbsp; ${state.stats.tokIn}<br>
+    TOK/OUT &nbsp; ${state.stats.tokOut}<br>
+    LATENCY &nbsp; ${last ? last+'ms' : '—'}<br>
+    ERR/RATE &nbsp; ${errRate}%<br>
+    MODELS &nbsp;&nbsp; ${state.models.length}
+  `;
+}
+
+function updateTelemetry(lat, connected) {
+  const connPct = connected ? 100 : 0;
+  document.getElementById('t-conn-pct').textContent = connPct + '%';
+  document.getElementById('t-conn-bar').style.width = connPct + '%';
+
+  // Rough token rate
+  const lats = state.stats.latencies;
+  if (lats.length > 0) {
+    const lastLat = lats[lats.length-1];
+    const rate = lastLat > 0 ? Math.round((100 / lastLat) * 1000) : 0;
+    const ratePct = Math.min(100, rate);
+    document.getElementById('t-tokrate').textContent = `${rate} t/s`;
+    document.getElementById('t-tokrate-bar').style.width = ratePct + '%';
+  }
+}
+
+function updateConnState(text, color) {
+  document.getElementById('conn-state').textContent = text;
+  const dot = document.getElementById('conn-dot');
+  dot.className = 'dot ' + (color === 'green' ? 'green' : color === 'amber' ? 'amber' : 'red');
+  document.getElementById('stream-state').textContent =
+    document.getElementById('p-stream').value === 'true' ? 'ON' : 'OFF';
+  document.getElementById('mode-dot').className =
+    document.getElementById('p-stream').value === 'true' ? 'dot green' : 'dot';
+}
+
+// ── QUICK ACTIONS ──
+function quickPrompt(text) {
+  if (!state.activeModel) { log('No model selected — connect first', 'warn'); return; }
+  document.getElementById('chat-input').value = text;
+  sendMessage();
+}
+
+// ── EXPORT ──
+function exportLog() {
+  const lines = state.logEntries.map(e => `[${e.ts}] ${e.msg}`).join('\n');
+  const blob = new Blob([lines], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `openclaw-log-${Date.now()}.txt`;
+  a.click();
+  log('Log exported');
+}
+
+// ── STREAM SELECT SYNC ──
+document.getElementById('p-stream').addEventListener('change', () => {
+  const on = document.getElementById('p-stream').value === 'true';
+  document.getElementById('stream-state').textContent = on ? 'ON' : 'OFF';
+  document.getElementById('mode-dot').className = on ? 'dot green' : 'dot';
+});
+
+// ── INIT LOG ──
+log('OPENCLAW MISSION CONTROL ONLINE');
+log('Configure endpoint and press CONNECT');
+log('Default port: 11434 (Ollama-compatible)', 'warn');
+</script>
+</body>
+</html>
